@@ -9,7 +9,7 @@ import { terminateWorkerTree } from "./worker-process.ts";
 import { WORKER_RUNTIME_DIRECTORY, workerRuntimeLayout } from "./worker-runtime-layout.ts";
 import { isolationSecurityStateBinding } from "./isolation-security-state.ts";
 import { developerToolEnvironment } from "./worker-environment.ts";
-import { assertNoWorkspaceReparsePoints, containedLaunch, denyByDefaultFilesystemPolicy, normalizeProjectScope as normalizeSharedProjectScope, normalizeWritableWorkspacePaths as normalizeSharedWritablePaths, workspacePermissionEntries, writableParentChain as sharedWritableParentChain } from "./worker-sandbox.ts";
+import { assertWorkspaceOutsideProject, assertNoWorkspaceReparsePoints, containedLaunch, denyByDefaultFilesystemPolicy, normalizeProjectScope as normalizeSharedProjectScope, normalizeWritableWorkspacePaths as normalizeSharedWritablePaths, workspacePermissionEntries, writableParentChain as sharedWritableParentChain } from "./worker-sandbox.ts";
 import { containedEnvelopeCore, containedSecurityBoundaryPaths, containedWriteReceiptChecks } from "./worker-receipts.ts";
 
 export type CursorAdapterConfig = {
@@ -207,12 +207,7 @@ function assertSafeConfig(config: CursorAdapterConfig, workspace: string): strin
     && (!Array.isArray(config.executableArguments) || config.executableArguments.some((value) => typeof value !== "string" || !value)))) {
     throw new Error("Cursor executable must be absolute and launcher arguments must be nonempty strings");
   }
-  const deniedRoot = resolve(config.deniedSourceRoot);
-  const workspaceKey = resolvedWorkspace.toLowerCase();
-  const deniedKey = deniedRoot.toLowerCase();
-  if (workspaceKey === deniedKey || workspaceKey.startsWith(`${deniedKey}\\`)) {
-    throw new Error("Cursor workspace must not be inside the authoritative repository");
-  }
+  assertWorkspaceOutsideProject(resolvedWorkspace, config.deniedSourceRoot, "Cursor workspace must not be inside the authoritative repository");
   verifyWorkspace(resolvedWorkspace);
   assertNoWorkspaceReparsePoints(resolvedWorkspace, "Cursor");
   return resolvedWorkspace;

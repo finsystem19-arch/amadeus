@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, win32 } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -31,7 +31,7 @@ test("resolveSandboxTestRunner maps amadeus updates providers test", () => {
 });
 
 test("buildSandboxPipeCheck uses powershell stdin pipe", () => {
-  const check = buildSandboxPipeCheck("scripts/run-updates-providers-tests-sandbox.mjs", "node");
+  const check = buildSandboxPipeCheck("scripts/run-updates-providers-tests-sandbox.mjs", "node", null, "win32");
   assert.equal(check.executable, "powershell");
   assert.match(check.args.join(" "), /Get-Content/);
   assert.match(check.args.join(" "), /--input-type=module/);
@@ -39,12 +39,20 @@ test("buildSandboxPipeCheck uses powershell stdin pipe", () => {
 });
 
 test("buildSandboxPipeCheck anchors the runner inside the worker workspace", () => {
-  const workspace = join("C:\\", "worker", "workspace");
-  const check = buildSandboxPipeCheck("scripts/run-branding-tests-sandbox.mjs", "node", workspace);
+  const workspace = win32.join("C:\\", "worker", "workspace");
+  const check = buildSandboxPipeCheck("scripts/run-branding-tests-sandbox.mjs", "node", workspace, "win32");
   assert.match(check.args.join(" "), /C:\\\\worker\\\\workspace\\\\scripts\\\\run-branding-tests-sandbox\.mjs/);
   assert.match(check.args.join(" "), /process\.chdir/);
   assert.match(check.args.join(" "), /StartsWith\('#!'\)/);
   assert.match(check.command, /powershell pipe scripts\/run-branding-tests-sandbox\.mjs/);
+});
+
+test("buildSandboxPipeCheck pipes the runner to Node through /bin/sh on macOS and Linux", () => {
+  const check = buildSandboxPipeCheck("scripts/run-branding-tests-sandbox.mjs", "/usr/local/bin/node", "/work/space", "darwin");
+  assert.equal(check.executable, "/bin/sh");
+  assert.deepEqual(check.args.slice(-3), ["/work/space", "scripts/run-branding-tests-sandbox.mjs", "/usr/local/bin/node"]);
+  assert.match(check.args[1], /--input-type=module/);
+  assert.equal(check.command, "node run scripts/run-branding-tests-sandbox.mjs");
 });
 
 test("auto-discovery prefers sandbox runner over node --test", () => {
@@ -59,26 +67,28 @@ test("auto-discovery prefers sandbox runner over node --test", () => {
   assert.ok(!checks.some((check) => Array.isArray(check.args) && check.args[0] === "--test"));
 });
 
-test("coordinator.verify sandbox scripts become powershell pipes", () => {
+const PIPE = process.platform === "win32" ? "powershell pipe" : "node run";
+
+test("coordinator.verify sandbox scripts become pipes", () => {
   assert.ok(existsSync(join(root, "scripts", "run-updates-providers-tests-sandbox.mjs")));
   const checks = discoverVerificationChecks(root, []);
-  assert.equal(checks[0]?.command, "powershell pipe scripts/workspace-diff-check.mjs");
-  assert.equal(checks.filter((check) => check.command === "powershell pipe scripts/workspace-diff-check.mjs").length, 1);
+  assert.equal(checks[0]?.command, `${PIPE} scripts/workspace-diff-check.mjs`);
+  assert.equal(checks.filter((check) => check.command === `${PIPE} scripts/workspace-diff-check.mjs`).length, 1);
   assert.ok(!checks.some((check) => check.command === "git diff --check"));
   assert.ok(checks.some((check) => String(check.command).includes("run-updates-providers-tests-sandbox.mjs")));
   assert.ok(checks.some((check) => String(check.command).includes("run-deterministic-verifier-discovery-tests-sandbox.mjs")));
   assert.ok(checks.some((check) => String(check.command).includes("run-excluded-path-tests-sandbox.mjs")));
   assert.ok(checks.some((check) => String(check.command).includes("run-branding-tests-sandbox.mjs")));
   assert.ok(checks.some((check) => String(check.command).includes("workspace-diff-check")));
-  assert.ok(checks.some((check) => String(check.command).includes("powershell pipe scripts/workspace-diff-check.mjs")));
-  assert.ok(checks.some((check) => String(check.command).includes("powershell pipe scripts/run-public-safety-sandbox.mjs")));
+  assert.ok(checks.some((check) => String(check.command).includes(`${PIPE} scripts/workspace-diff-check.mjs`)));
+  assert.ok(checks.some((check) => String(check.command).includes(`${PIPE} scripts/run-public-safety-sandbox.mjs`)));
 });
 
 test("workspace diff runner keeps its shebang and executes through the cwd-aware pipe", () => {
   const runnerPath = join(root, "scripts", "workspace-diff-check.mjs");
   assert.match(readFileSync(runnerPath, "utf8"), /^#!\/usr\/bin\/env node/);
   const check = discoverVerificationChecks(root, [])
-    .find((candidate) => candidate.command === "powershell pipe scripts/workspace-diff-check.mjs");
+    .find((candidate) => candidate.command === (process.platform === "win32" ? "powershell pipe" : "node run") + " scripts/workspace-diff-check.mjs");
   assert.ok(check);
   const result = spawnSync(check.executable, check.args, { cwd: tmpdir(), encoding: "utf8" });
   assert.equal(result.status, 0, `${result.error ?? ""}\n${result.stdout}\n${result.stderr}`);

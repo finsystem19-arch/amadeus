@@ -43,7 +43,7 @@ test('a workspace may not sit inside the project, in either slash style, nor wri
   assert.throws(() => writableParentChain(root, ['missing/deeper/file.md']), /must be materialized/);
 });
 
-test('the development policy denies private folders and evidence, and writes only in the workspace', () => {
+test('the development policy denies private folders and evidence, and writes only in the workspace', { skip: process.platform !== 'win32' && 'Windows path rules' }, () => {
   const scope = { assignedProjectRoot: 'C:\\P\\app', readableProjectRoots: ['C:\\P\\app'], deniedParentPaths: ['C:\\P'],
     protectedPaths: ['C:\\P\\app\\.git'], deniedSensitivePaths: ['C:\\U\\.ssh'] };
   const policy = developmentFilesystemPolicy({ scope, extraDenies: ['C:\\S\\patches'], workspace: 'C:\\W\\ws', writablePaths: ['.'],
@@ -53,6 +53,24 @@ test('the development policy denies private folders and evidence, and writes onl
   assert.ok(policy.includes('"C:\\\\W\\\\ws"="write"'));
   assert.equal((policy.match(/="write"/g) ?? []).length, 2, 'the workspace itself and its relative root entry only');
   assert.equal(workspacePermissionEntries(['docs'], 'deny'), '"."="read","docs"="write",".git"="deny",".worker-isolation.json"="deny"');
+});
+
+test('on macOS and Linux the development policy denies private folders and evidence, and writes only in the workspace', { skip: process.platform === 'win32' && 'POSIX path rules' }, () => {
+  const scope = { assignedProjectRoot: '/P/app', readableProjectRoots: ['/P/app'], deniedParentPaths: ['/P'],
+    protectedPaths: ['/P/app/.git'], deniedSensitivePaths: ['/U/.ssh'] };
+  const policy = developmentFilesystemPolicy({ scope, extraDenies: ['/S/patches'], workspace: '/W/ws', writablePaths: ['.'],
+    metadataAccess: 'read', processReadPaths: ['/bin'] });
+  assert.match(policy, /^":root"="read",":minimal"="read"/);
+  for (const deny of ['"/P"="deny"', '"/U/.ssh"="deny"', '"/S/patches"="deny"', '"/P/app/.git"="deny"']) assert.ok(policy.includes(deny), deny);
+  assert.ok(policy.includes('"/W/ws"="write"'));
+  assert.equal((policy.match(/="write"/g) ?? []).length, 2, 'the workspace itself and its relative root entry only');
+});
+
+test('a worker workspace inside the project is refused with either slash style', () => {
+  for (const [workspace, project] of [['/P/app/ws', '/P/app'], ['/P/APP/ws', '/p/app'], ['/P/app', '/P/app']]) {
+    assert.throws(() => assertWorkspaceOutsideProject(workspace, project, 'inside'), /inside/);
+  }
+  assert.doesNotThrow(() => assertWorkspaceOutsideProject('/P/app-copy', '/P/app', 'inside'));
 });
 
 test('Claude-style workers inherit only process plumbing from the host', () => {

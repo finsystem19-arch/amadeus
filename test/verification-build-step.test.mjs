@@ -96,5 +96,5 @@ test('a build step never counts as a project test', () => {
 
 test('this repository declares its sandboxed package build', () => {
   const step = readBuildStep(process.cwd(), process.cwd());
-  assert.equal(step.command, 'powershell pipe scripts/run-package-build-sandbox.mjs');
+  assert.equal(step.command, `${process.platform === 'win32' ? 'powershell pipe' : 'node run'} scripts/run-package-build-sandbox.mjs`);
 });

@@ -62,7 +62,7 @@ test('non-model Codex checks preserve the configured MXC isolation boundary', ()
   ), /require the MXC Windows sandbox/);
 });
 
-test('project-scoped Codex policy satisfies the Windows root-read baseline without exposing protected evidence', () => {
+test('project-scoped Codex policy satisfies the Windows root-read baseline without exposing protected evidence', { skip: process.platform !== 'win32' && 'Windows path rules' }, () => {
   const policy = projectFilesystemPolicy({
     assignedProjectRoot: 'C:\\Users\\Person\\Projects\\Example',
     readableProjectRoots: ['C:\\Users\\Person\\Projects\\Example'],

@@ -9,7 +9,7 @@ import { terminateWorkerTree } from "./worker-process.ts";
 import { isolationSecurityStateBinding } from "./isolation-security-state.ts";
 import { resolveMaximumIdleSeconds } from "./worker-timeouts.ts";
 import { developerToolEnvironment } from "./worker-environment.ts";
-import { developmentFilesystemPolicy, normalizeProjectScope as normalizeSharedProjectScope, normalizeWritableWorkspacePaths, stableWorkspaceChildren, writableParentChain, type ProjectScope } from "./worker-sandbox.ts";
+import { assertWorkspaceOutsideProject, developmentFilesystemPolicy, normalizeProjectScope as normalizeSharedProjectScope, normalizeWritableWorkspacePaths, stableWorkspaceChildren, writableParentChain, type ProjectScope } from "./worker-sandbox.ts";
 
 export type CodexAdapterConfig = {
   executable?: string;
@@ -161,11 +161,7 @@ export function buildCodexInvocation(
   if (!isAbsolute(config.deniedSourceRoot)) throw new Error("deniedSourceRoot must be absolute");
   const resolvedWorkspace = resolve(workspace);
   const deniedSourceRoot = resolve(config.deniedSourceRoot);
-  const workspaceKey = resolvedWorkspace.toLowerCase();
-  const deniedKey = deniedSourceRoot.toLowerCase();
-  if (workspaceKey === deniedKey || workspaceKey.startsWith(`${deniedKey}\\`)) {
-    throw new Error("Worker workspace must not be inside the denied source root");
-  }
+  assertWorkspaceOutsideProject(resolvedWorkspace, deniedSourceRoot, "Worker workspace must not be inside the denied source root");
   verifyWorkspace(workspace, { allowWorkingChanges: options.allowWorkingChanges });
   const writablePaths = normalizeWritableWorkspacePaths(config.writableWorkspacePaths);
   const projectScope = normalizeSharedProjectScope(config, { label: "Codex", deniedPaths: "ancestors" });

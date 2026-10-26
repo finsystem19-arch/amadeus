@@ -5,7 +5,7 @@ export type ModelRoute = {
 };
 import type { ModelCatalog, ListedModel } from "./model-catalog.ts";
 
-import { DEFAULT_TIER_MODELS, WORKER_PROVIDERS, providerLabel, workerProvider,
+import { DEFAULT_TIER_MODELS, WORKER_PROVIDERS, isSubscriptionModelProvider, providerLabel, workerProvider,
   type CapabilityTierName, type SubscriptionModelProvider, type TierModels } from "./worker-providers.ts";
 export { DEFAULT_TIER_MODELS, type CapabilityTierName, type SubscriptionModelProvider, type TierModels };
 
@@ -42,6 +42,9 @@ export function orderModelProviders(input: { available: SubscriptionModelProvide
   return [...input.available].sort((a, b) => rank(a) - rank(b));
 }
 import { parseWindowsUiObjective, type WindowsUiCommand } from "./windows-ui-automation.ts";
+/** A model route that a failed attempt can steer later attempts away from. */
+export type AvoidableProvider = ModelRoute["provider"] | LocalModelRoute["provider"];
+export type RoutingPolicy = "balanced-quality" | "quality-first";
 export type DeterministicCommand = "npm-test" | "node-test" | "npm-build" | "npm-lint" | "npm-check" | "npm-typecheck" | WindowsUiCommand;
 /** Local OpenAI-compatible route — only selected when pilot gate + qualification allow it. */
 export type LocalModelRoute = {
@@ -58,7 +61,12 @@ export type WorkRoute = {
   reason: string;
   command?: DeterministicCommand;
   financialBasis: "no-model" | "subscription-suitability-not-price-comparison" | "no-subscription-local";
-  routingPolicy: "balanced-quality";
+  /**
+   * balanced-quality (default): cheapest capable tier. quality-first: never trade
+   * reasoning for cost; local models take only routine steps they qualified for,
+   * and every other step uses the provider's strongest tiers.
+   */
+  routingPolicy: RoutingPolicy;
   taskClass: "deterministic" | "routine-implementation" | "lightweight-reasoning" | "complex-reasoning" | "frontier-reasoning" | "provider-fallback" | "explicit";
   capabilityTier: "software" | "cursor-auto" | "efficient" | "workhorse" | "frontier" | "explicit" | "local-qualified";
   capabilitySignals: string[];
@@ -93,17 +101,18 @@ export function normalizeRouteModel(value: unknown, context: "automatic" | "pinn
 
 export type WorkProfile = Pick<WorkRoute, "taskClass" | "capabilitySignals" | "localModelCandidate">;
 
+/** Every model route a failed attempt can steer away from: each registered provider, Cursor, and the local model. */
+function isRetryAvoidableProvider(value: unknown): value is AvoidableProvider {
+  return isSubscriptionModelProvider(value) || value === "cursor-browser-login" || value === "local-openai-compatible";
+}
+
 export function providerToAvoidAfterAuthorizedRetry(input: {
   jobStatus: string;
   retryAuthorized: boolean;
   provider: unknown;
-}): ModelRoute["provider"] | null {
+}): AvoidableProvider | null {
   if (input.jobStatus !== "failed" || !input.retryAuthorized) return null;
-  return input.provider === "codex-chatgpt-signin"
-    || input.provider === "cursor-browser-login"
-    || input.provider === "claude-subscription-signin"
-    ? input.provider
-    : null;
+  return isRetryAvoidableProvider(input.provider) ? input.provider : null;
 }
 
 export function providersToAvoidForRetryChain(attemptsNewestFirst: Array<{
@@ -111,15 +120,11 @@ export function providersToAvoidForRetryChain(attemptsNewestFirst: Array<{
   retryAuthorized: boolean;
   provider: unknown;
   failureDetail?: unknown;
-}>): ModelRoute["provider"][] {
-  const avoided = new Set<ModelRoute["provider"]>();
+}>): AvoidableProvider[] {
+  const avoided = new Set<AvoidableProvider>();
   let insideRetryChain = true;
   for (const attempt of attemptsNewestFirst) {
-    const provider = attempt.provider === "codex-chatgpt-signin"
-      || attempt.provider === "cursor-browser-login"
-      || attempt.provider === "claude-subscription-signin"
-      ? attempt.provider
-      : null;
+    const provider = isRetryAvoidableProvider(attempt.provider) ? attempt.provider : null;
     const hardEnvironmentFailure = attempt.jobStatus === "failed"
       && /\bisolation acceptance harness is unavailable\b/i.test(String(attempt.failureDetail ?? ""));
     if (provider && hardEnvironmentFailure) avoided.add(provider);
@@ -182,15 +187,17 @@ export type QualifiedLocalModelCandidate = {
   endpoint?: string;
   /** Must be true only after approval + enable + capability qualification. */
   routable: boolean;
+  /** Effort the local server accepts; "none" when unset. */
+  reasoningEffort?: string;
 };
 
 export function selectWorkRoute(input: {
   objective: string;
   pinned?: ModelRoute | null;
   suggested?: ModelRoute | null;
-  avoidProvider?: ModelRoute["provider"] | null;
+  avoidProvider?: AvoidableProvider | null;
   /** Providers that already failed in this goal's retry chain. */
-  avoidProviders?: ModelRoute["provider"][];
+  avoidProviders?: AvoidableProvider[];
   cursorInstalled: boolean;
   /** Optional Claude signed-in route; never changes default Cursor/Codex selection when absent. */
   claudeInstalled?: boolean;
@@ -217,6 +224,8 @@ export function selectWorkRoute(input: {
   limitedProviders?: SubscriptionModelProvider[];
   /** Owner overrides of the model per tier, keyed by provider (see DEFAULT_TIER_MODELS). */
   tierModels?: Partial<Record<string, TierModels>> | null;
+  /** Owner setting (worker config "routingPolicy"); balanced-quality when absent. */
+  routingPolicy?: RoutingPolicy;
   /**
    * Windows UI plans act on the host desktop, outside every worker sandbox.
    * Only an objective the owner wrote may route to them; a worker-proposed
@@ -224,11 +233,12 @@ export function selectWorkRoute(input: {
    */
   desktopAutomationAllowed?: boolean;
 }): WorkRoute {
-  const avoided = new Set<ModelRoute["provider"]>([
+  const avoided = new Set<AvoidableProvider>([
     ...(input.avoidProvider ? [input.avoidProvider] : []),
     ...(input.avoidProviders ?? []),
   ]);
   const profile = classifyWork(input.objective);
+  const policy: RoutingPolicy = input.routingPolicy === "quality-first" ? "quality-first" : "balanced-quality";
   const defaultCapabilityTier = (provider: ModelRoute["provider"]): WorkRoute["capabilityTier"] => {
     if (provider === "cursor-browser-login") return "cursor-auto";
     if (provider === "claude-subscription-signin") return "workhorse";
@@ -238,7 +248,7 @@ export function selectWorkRoute(input: {
     overrides: Partial<Pick<WorkRoute, "taskClass" | "capabilityTier" | "capabilitySignals" | "localModelCandidate">> = {}): WorkRoute => ({ ...route,
     model: normalizeRouteModel(route.model, input.pinned ? "pinned" : "automatic"),
     reasoningEffort: route.reasoningEffort ?? "low", reason,
-    financialBasis: "subscription-suitability-not-price-comparison", routingPolicy: "balanced-quality",
+    financialBasis: "subscription-suitability-not-price-comparison", routingPolicy: policy,
     taskClass: overrides.taskClass ?? profile.taskClass,
     capabilityTier: overrides.capabilityTier ?? defaultCapabilityTier(route.provider),
     capabilitySignals: overrides.capabilitySignals ?? profile.capabilitySignals,
@@ -257,7 +267,7 @@ export function selectWorkRoute(input: {
     reason: command.startsWith("windows-ui-")
       ? "Exact allowlisted Windows UI plan: use deterministic host software without a model call."
       : "Exact supported test command: run ordinary software without a model call.", financialBasis: "no-model",
-    routingPolicy: "balanced-quality", taskClass: "deterministic", capabilityTier: "software",
+    routingPolicy: policy, taskClass: "deterministic", capabilityTier: "software",
     capabilitySignals: ["exact supported deterministic command"], localModelCandidate: false };
   const suggestedProvider = input.suggested?.provider;
   const suggestionAvailable = !avoided.has(suggestedProvider as ModelRoute["provider"]) && (
@@ -274,18 +284,22 @@ export function selectWorkRoute(input: {
   }
   // Qualified local models sit after ordinary software and before Cursor/Codex,
   // but only when the experimental pilot gate is open (never on stable 0.3.x).
-  if (input.localModelPilotGateOpen === true && profile.localModelCandidate) {
+  // quality-first also gives them bounded implementation, which independent
+  // verification checks and a failed attempt escalates (see below).
+  const localEligible = profile.localModelCandidate
+    || policy === "quality-first" && profile.taskClass === "routine-implementation";
+  if (input.localModelPilotGateOpen === true && localEligible && !avoided.has("local-openai-compatible")) {
     const local = (input.qualifiedLocalModels ?? []).find((candidate) => candidate.routable === true && candidate.model);
     if (local) {
       return {
         provider: "local-openai-compatible",
         model: local.model,
-        reasoningEffort: "none",
+        reasoningEffort: local.reasoningEffort ?? "none",
         endpoint: local.endpoint,
         providerId: local.providerId,
         reason: "Qualified local OpenAI-compatible model selected behind open experimental pilot gate.",
         financialBasis: "no-subscription-local",
-        routingPolicy: "balanced-quality",
+        routingPolicy: policy,
         taskClass: profile.taskClass,
         capabilityTier: "local-qualified",
         capabilitySignals: [...profile.capabilitySignals, "local-model-pilot-gate-open", "capability-qualified"],
@@ -343,6 +357,11 @@ export function selectWorkRoute(input: {
         capabilitySignals: ["diagnosed provider failure requires one alternate-provider replacement"], localModelCandidate: false,
       });
   }
+  if (avoided.has("local-openai-compatible") && modelFailed.length === 0 && order.length > 0) {
+    return tierRoute(policy === "quality-first" ? "frontier" : "workhorse", "high",
+      `The local model's attempt failed; escalate to ${providerLabel(order[0])} instead of repeating it.`,
+      fallback("diagnosed local-model failure escalates to a subscription provider"));
+  }
   if (modelFailed.length > 0 && order.length > 0) {
     return tierRoute("efficient", "low", `The previous diagnosed attempt failed; use ${providerLabel(order[0])} for the corrected replacement instead of repeating the same provider.`,
       fallback("diagnosed provider failure requires one alternate-provider replacement"));
@@ -357,6 +376,12 @@ export function selectWorkRoute(input: {
   }
   if (profile.taskClass === "frontier-reasoning") {
     return tierRoute("frontier", "high", "Exceptional complexity is explicit: use the top capability tier of the selected provider.");
+  }
+  if (policy === "quality-first") {
+    // Never trade reasoning for cost: complex work gets the top tier, everything else the workhorse tier.
+    return profile.taskClass === "complex-reasoning"
+      ? tierRoute("frontier", "high", "Quality first: complex design or diagnosis uses the top capability tier of the selected provider.")
+      : tierRoute("workhorse", "high", "Quality first: use the workhorse tier of the selected provider at high effort.");
   }
   if (profile.taskClass === "complex-reasoning") {
     return tierRoute("workhorse", "medium", "Complex design or diagnosis is explicit: use the workhorse tier of the selected provider.");
@@ -395,7 +420,7 @@ export function hasCompletedProviderResult(jsonl: string, provider: string): boo
       const results = rows.filter(row => row.type === "result");
       return results.length === 1 && results[0].subtype === "success" && results[0].is_error === false;
     }
-    if (provider === "codex-chatgpt-signin") {
+    if (provider === "codex-chatgpt-signin" || provider === "local-openai-compatible") {
       return rows.filter(row => row.type === "turn.completed").length === 1
         && !rows.some(row => row.type === "turn.failed" || row.type === "error");
     }

@@ -160,7 +160,15 @@ export class CodexWorkerDriver implements WorkerDriver {
   async run(context: WorkerContext): Promise<WorkerResult> {
     let config = JSON.parse(readFileSync(this.paths.config, "utf8")) as CodexAdapterConfig;
     if (config.developmentMode) config = portableWorkerConfig(config, config.deniedSourceRoot) as CodexAdapterConfig;
-    if (config.developmentMode && context.goalId && !this.paths.objectiveOverride) config.outputSchema = join(import.meta.dirname, "goal-decision.schema.json");
+    const decisionSchema = config.developmentMode && context.goalId && !this.paths.objectiveOverride
+      ? join(import.meta.dirname, "goal-decision.schema.json") : undefined;
+    // Local model servers enforce --output-schema on every response, which stops the
+    // model from calling tools first; for them the schema is stated in the objective
+    // and the final message is validated exactly as before (parseGoalDecision).
+    if (decisionSchema && !config.localModelEndpoint) config.outputSchema = decisionSchema;
+    const localDecisionGuidance = decisionSchema && config.localModelEndpoint
+      ? `\n\nWhen the work is finished, your final message must be only one JSON object (no prose, no code fence) that validates against this JSON Schema:\n${readFileSync(decisionSchema, "utf8")}`
+      : "";
     const workspaceId = `${context.jobId}-a${context.attempt}`;
     const { workspace } = materializeWorkspace({
       manifestPath: this.paths.manifest,
@@ -191,7 +199,7 @@ export class CodexWorkerDriver implements WorkerDriver {
       let lastProgressAt = 0;
       let lastProgressSignature = "";
       assertModelCallAllowed(context);
-      const result = await runCodexAsync(config, workspace, objective + (seed?.guidance ?? "") + recoveryGuidance + ephemeralWorkerGuidance, reservation,
+      const result = await runCodexAsync(config, workspace, objective + (seed?.guidance ?? "") + recoveryGuidance + ephemeralWorkerGuidance + localDecisionGuidance, reservation,
         AbortSignal.any([context.signal, leaseAbort.signal]), (line) => {
           let protocolComplete = false;
           try { protocolComplete = JSON.parse(line)?.type === "turn.completed"; } catch { /* Non-JSON diagnostics are ignored. */ }

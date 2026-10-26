@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { spawn, spawnSync } from "node:child_process";
@@ -41,6 +42,12 @@ export type CodexAdapterConfig = {
   /** Shared with Claude workers: may the worker run commands (default true). */
   workerCommandsEnabled?: boolean;
   outputSchema?: string;
+  /**
+   * Run this worker on a local OpenAI-compatible model (Responses API) instead of
+   * the ChatGPT sign-in. Loopback addresses only, so project content never leaves
+   * the computer; everything else (sandbox, receipts, verification) is unchanged.
+   */
+  localModelEndpoint?: string;
   isolationVerified?: boolean;
   isolationReceipt?: string | null;
   isolationAcceptanceHarness?: string | null;
@@ -53,6 +60,29 @@ export const CODEX_PERMISSION_PROFILE = "amadeus_task_worker";
 
 export function optionalModelArguments(model: unknown): string[] {
   return typeof model === "string" && model.trim() ? ["-m", model] : [];
+}
+
+const LOCAL_MODEL_PROVIDER = "amadeus_local";
+
+/** The base URL of a loopback model server, or an error for anything that could leave the computer. */
+export function loopbackModelEndpoint(endpoint: string): string {
+  let url: URL;
+  try { url = new URL(endpoint); } catch { throw new Error("Local model endpoint must be a URL"); }
+  if (!/^https?:$/.test(url.protocol) || !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname) || url.username || url.password) {
+    throw new Error("Local model endpoint must be a loopback http(s) address on this computer");
+  }
+  return url.href.replace(/\/+$/, "");
+}
+
+/** Codex settings that point one worker at a local model; none when the endpoint is unset. */
+export function localModelProviderArguments(endpoint: string | undefined): string[] {
+  if (endpoint === undefined) return [];
+  return [
+    "-c", `model_provider=${JSON.stringify(LOCAL_MODEL_PROVIDER)}`,
+    "-c", `model_providers.${LOCAL_MODEL_PROVIDER}.name="Local model"`,
+    "-c", `model_providers.${LOCAL_MODEL_PROVIDER}.base_url=${JSON.stringify(loopbackModelEndpoint(endpoint))}`,
+    "-c", `model_providers.${LOCAL_MODEL_PROVIDER}.wire_api="responses"`,
+  ];
 }
 
 export type CodexIsolationReceipt = {
@@ -196,6 +226,7 @@ export function buildCodexInvocation(
     "--json",
     "-C", resolvedWorkspace,
     ...optionalModelArguments(config.model),
+    ...localModelProviderArguments(config.localModelEndpoint),
     ...(config.outputSchema ? ["--output-schema", config.outputSchema] : []),
     "-c", `windows.sandbox=${JSON.stringify(config.windowsSandbox)}`,
     "-c", `permissions.${CODEX_PERMISSION_PROFILE}=${permissionDefinition}`,
@@ -386,8 +417,17 @@ export async function runCodexAsync(
 ): Promise<{ exitCode: number | null; signal: NodeJS.Signals | null; timedOut: boolean; stdout: string; stderr: string; error?: string }> {
   assertDispatchAllowed(config, estimatedCredits, workspace);
   const args = buildCodexInvocation(config, workspace, objective);
-  return runWorkerCommand(resolveConfiguredCodexExecutable(config), args, workspace, config.maximumRuntimeSeconds,
-    signal, codexModelWorkerEnvironmentOverrides(), resolveMaximumIdleSeconds(config), onStdoutLine);
+  // A local model needs no ChatGPT sign-in. An empty Codex home keeps the owner's
+  // personal skills, plugins and AGENTS.md out of the prompt: with a real home
+  // those exceeded a 262k-token context before the task began.
+  const localHome = config.localModelEndpoint ? mkdtempSync(join(tmpdir(), "amadeus-local-codex-home-")) : null;
+  try {
+    return await runWorkerCommand(resolveConfiguredCodexExecutable(config), args, workspace, config.maximumRuntimeSeconds,
+      signal, { ...codexModelWorkerEnvironmentOverrides(), ...(localHome ? { CODEX_HOME: localHome } : {}) },
+      resolveMaximumIdleSeconds(config), onStdoutLine);
+  } finally {
+    if (localHome) rmSync(localHome, { recursive: true, force: true });
+  }
 }
 
 /** Shared process lifecycle for model workers and deterministic sandbox commands. */

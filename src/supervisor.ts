@@ -13,7 +13,8 @@ import { GuardedGitPatchApplicator, LocalVerifiedCheckpointDriver } from "./host
 import { Orchestrator } from "./orchestrator.ts";
 import { runGoalStages } from "./goal-runner.ts";
 import { ProjectCheckpointDriver } from "./development-project.ts";
-import { planWorkRoute, deterministicCommand, normalizeRouteModel, providersToAvoidForRetryChain, type WorkRoute } from "./work-routing.ts";
+import { planWorkRoute, deterministicCommand, normalizeRouteModel, providersToAvoidForRetryChain, type AvoidableProvider, type WorkRoute } from "./work-routing.ts";
+import { localModelAnswers, qualifiedLocalModel } from "./local-model.ts";
 import { SoftwareWorkerDriver } from "./software-worker-driver.ts";
 import { DeterministicVerifier } from "./deterministic-verifier.ts";
 import { LEGACY_DEFAULT_CODEX_MODEL, readModelCatalog } from "./model-catalog.ts";
@@ -26,7 +27,7 @@ import { commitVerifiedMilestone } from "./milestone-git.ts";
 import { resolveStandingMilestoneGitAuthorization } from "./milestone-git-authorization.ts";
 import { resolveWorkerWorkspaceRoot } from "./worker-workspace-root.ts";
 import { resolveMaximumIdleSeconds } from "./worker-timeouts.ts";
-import { assertSubscriptionProviderDeclared, privacyFlowsPath } from "./provider-flows.ts";
+import { assertLocalProviderDeclared, assertSubscriptionProviderDeclared, privacyFlowsPath } from "./provider-flows.ts";
 
 /** Durable state only — never a parent checkout or nested host layout. */
 function resolveSupervisorStateRoot(dbPath?: string): string {
@@ -143,7 +144,9 @@ function main(): Promise<void> {
     const projectRoot = resolve(String(stage?.manifestValidation.sourceRoot
       ?? JSON.parse(readFileSync(manifest, "utf8")).source.projectRoot));
     const workspaceRoot = resolveWorkerWorkspaceRoot(projectRoot, stateRoot);
-    if (selectedRoute?.provider !== "software") {
+    if (selectedRoute?.provider === "local-openai-compatible") {
+      assertLocalProviderDeclared(privacyFlowsPath(coordinatorRoot));
+    } else if (selectedRoute?.provider !== "software") {
       assertSubscriptionProviderDeclared(useClaude ? claudeStyleProvider : useCursor ? "cursor-browser-login" : "codex-chatgpt-signin",
         privacyFlowsPath(coordinatorRoot));
     }
@@ -321,7 +324,7 @@ function main(): Promise<void> {
               const latest = coordinator.goalEvents(goalId).filter((event) => event.kind === "iteration_completed").at(-1);
               const suggested = latest ? JSON.parse(String(latest.detail)).decision?.nextRoute : null;
               const objective = String(job.iteration_objective || goal.next_objective || goal.objective);
-              const avoidProviders = new Set<SubscriptionModelProvider | "cursor-browser-login">();
+              const avoidProviders = new Set<AvoidableProvider>();
               const retryEvents = coordinator.goalEvents(goalId).filter((event) => event.kind === "retry_authorized");
               const retryHistory: Array<{ jobStatus: string; retryAuthorized: boolean; provider: unknown; failureDetail: unknown }> = [];
               for (let iteration = Number(job.goal_iteration) - 1; iteration > 0; iteration--) {
@@ -395,8 +398,13 @@ function main(): Promise<void> {
                 catalog = { fetchedAt: "unavailable", models: [{ slug: operations.dispatch.model,
                   priority: 0, supportedEfforts: ["low", "medium", "high"] }] };
               }
+              // The owner's local model: enabled, loopback-only, qualified, and answering right now.
+              const qualifiedLocal = qualifiedLocalModel(worker.localModel, stateRoot);
+              const localModel = qualifiedLocal && await localModelAnswers(qualifiedLocal) ? qualifiedLocal : null;
               const plan = planWorkRoute({
                 objective, pinned, suggested, avoidProviders: [...avoidProviders],
+                localModelPilotGateOpen: localModel !== null, qualifiedLocalModels: localModel ? [localModel] : [],
+                routingPolicy: worker.routingPolicy,
                 // Host desktop automation only for the owner's own goal objective, never a worker-proposed step.
                 desktopAutomationAllowed: objective === String(goal.objective),
                 cursorInstalled, claudeInstalled, codexInstalled, installedProviders, hostProvider, preferredProvider, limitedProviders, tierModels, catalog,
@@ -426,6 +434,8 @@ function main(): Promise<void> {
                 if (useClaude) claudeStyleProvider = routedProvider!.id;
                 const routedCli = routedProvider?.cli ?? "claude";
                 useCursor = route.provider === "cursor-browser-login";
+                // A local model runs in the Codex worker (same sandbox and receipts) against its loopback endpoint.
+                const useLocal = route.provider === "local-openai-compatible";
                 const basePath = useClaude ? (routedCli === "claude" ? claudeWorkerConfig : null) : useCursor ? cursorWorkerConfig : workerConfig;
                 // A missing Claude-style config is fine: the driver derives a portable one.
                 const base = basePath && existsSync(basePath) ? JSON.parse(readFileSync(basePath, "utf8")) : {};
@@ -447,6 +457,7 @@ function main(): Promise<void> {
                   // Shared by every provider (D5): may a worker run commands? Default on.
                   workerCommandsEnabled: worker.workerCommandsEnabled !== false,
                   deniedSourceRoot: stage.manifestValidation.sourceRoot,
+                  ...(useLocal ? { localModelEndpoint: route.endpoint } : {}),
                   model: normalizeRouteModel(route.model ?? (useClaude || useCursor ? "auto" : null)),
                   reasoningEffort: route.reasoningEffort === "none" ? "low" : route.reasoningEffort };
               }

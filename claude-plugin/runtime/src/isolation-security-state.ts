@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 export type IsolationSecurityStateBinding = {
@@ -26,7 +27,9 @@ export function isolationSecurityStateBinding(
   workspace: string,
   boundaryPaths: string[],
   mutableBoundaryRoots: string[] = [],
+  platform: NodeJS.Platform = process.platform,
 ): IsolationSecurityStateBinding {
+  if (platform !== "win32") return posixSecurityStateBinding(adapter, boundaryPaths, mutableBoundaryRoots);
   if (!probePath || !isAbsolute(probePath) || !existsSync(probePath)) {
     throw new Error(`${adapter} dispatch requires an existing absolute isolation security-state probe`);
   }
@@ -63,5 +66,31 @@ export function isolationSecurityStateBinding(
     securityBoundaryPaths: paths,
     mutableBoundaryRoots: mutableRoots,
     hostSecurityStateFingerprint: value.fingerprintSha256,
+  };
+}
+
+/**
+ * macOS and Linux: the same binding from each boundary path's owner, group,
+ * permission bits and file type (the sandbox itself is Codex's Seatbelt or
+ * Landlock policy, checked separately by the acceptance probes). The code that
+ * computes it is this module, so its hash is the probe hash.
+ */
+function posixSecurityStateBinding(adapter: string, boundaryPaths: string[], mutableBoundaryRoots: string[]): IsolationSecurityStateBinding {
+  const paths = [...new Set(boundaryPaths.map((path) => resolve(path)))].sort((a, b) => a.localeCompare(b));
+  const mutableRoots = [...new Set(mutableBoundaryRoots.map((path) => resolve(path)))].sort((a, b) => a.localeCompare(b));
+  if (mutableRoots.some((path) => !paths.includes(path))) throw new Error(`${adapter} mutable security root is not permission-bound`);
+  const state = paths.map((path) => {
+    try {
+      const stat = lstatSync(path);
+      return { path, uid: stat.uid, gid: stat.gid, mode: stat.mode, link: stat.isSymbolicLink() };
+    } catch { return { path, missing: true }; }
+  });
+  const probe = fileURLToPath(import.meta.url);
+  return {
+    securityStateProbePath: probe,
+    securityStateProbeSha256: sha256File(probe),
+    securityBoundaryPaths: paths,
+    mutableBoundaryRoots: mutableRoots,
+    hostSecurityStateFingerprint: createHash("sha256").update(JSON.stringify(state)).digest("hex").toUpperCase(),
   };
 }

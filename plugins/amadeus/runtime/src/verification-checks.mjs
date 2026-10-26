@@ -12,6 +12,16 @@ const EVIDENCE_PATCH_EXCLUDES = [
 ];
 
 /**
+ * npm's CLI beside the running Node: next to node.exe on Windows, and in
+ * ../lib/node_modules on macOS and Linux installs.
+ */
+export function npmCliPath(nodeExecutable = process.execPath, exists = existsSync) {
+  const bin = dirname(nodeExecutable);
+  const candidates = [join(bin, "node_modules", "npm", "bin", "npm-cli.js"), join(bin, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js")];
+  return candidates.find((candidate) => exists(candidate)) ?? candidates[0];
+}
+
+/**
  * Map `test/amadeus-updates-providers.test.mjs` →
  * `scripts/run-updates-providers-tests-sandbox.mjs` when present.
  */
@@ -233,7 +243,7 @@ export function discoverVerificationChecks(workspace, changedPaths = [], options
           tool: "npm",
           command: "npm test",
           executable: process.execPath,
-          args: [join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"), "test", "--", ...tests],
+          args: [npmCliPath(), "test", "--", ...tests],
         });
       } else if (!packageManager && tests.every((path) => {
         const source = readFileSync(join(workspace, ...path.split("/")), "utf8");
@@ -276,7 +286,7 @@ function npmScriptCheck(workspace, name, scriptBody) {
     tool: "npm",
     command: `npm run ${name}`,
     executable: process.execPath,
-    args: [join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"), "run", name],
+    args: [npmCliPath(), "run", name],
   };
 }
 

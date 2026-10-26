@@ -1,7 +1,7 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
-import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { basename, delimiter, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { resolveCodexExecutable } from './codex-adapter.ts';
 import { PROVIDER_SIGN_IN_FOLDERS, WORKER_PROVIDERS } from './worker-providers.ts';
@@ -39,6 +39,23 @@ export function defaultSensitivePaths(home: string, sourceRoot: string, present:
     && !keep.some((root) => root === path.toLowerCase() || root.startsWith(`${path.toLowerCase()}${sep}`)));
 }
 
+const CODE_MODE_HOST = process.platform === 'win32' ? 'codex-code-mode-host.exe' : 'codex-code-mode-host';
+
+/**
+ * macOS and Linux: the first `codex` on PATH, followed through its symlink to the
+ * release folder that also holds the code-mode host (where.exe does this on Windows).
+ */
+export function findCodexOnPath(pathVariable: string | undefined, present: (path: string) => boolean = existsSync): string | null {
+  for (const folder of (pathVariable ?? '').split(delimiter).filter(Boolean)) {
+    const candidate = join(folder, 'codex');
+    if (!present(candidate)) continue;
+    let real: string;
+    try { real = realpathSync(candidate); } catch { continue; }
+    if (present(join(dirname(real), 'codex-code-mode-host'))) return real;
+  }
+  return null;
+}
+
 /** Bind known dependencies at task execution, never enumerate installed software. */
 export function portableWorkerConfig(config: Record<string, any>, sourceRoot: string, options: {
   resolveExecutable?: () => string; exists?: (path: string) => boolean;
@@ -47,12 +64,14 @@ export function portableWorkerConfig(config: Record<string, any>, sourceRoot: st
   let executable = config.executable;
   if (!executable || !isAbsolute(executable)) {
     executable = options.resolveExecutable?.() ?? resolveCodexExecutable();
-    if (!isAbsolute(executable)) {
-      try { executable = execFileSync('where.exe', ['codex.exe'], { encoding: 'utf8', windowsHide: true }).split(/\r?\n/).find(path => present(join(dirname(path), 'codex-code-mode-host.exe'))) ?? ''; }
+    if (!isAbsolute(executable) && process.platform === 'win32') {
+      try { executable = execFileSync('where.exe', ['codex.exe'], { encoding: 'utf8', windowsHide: true }).split(/\r?\n/).find(path => present(join(dirname(path), CODE_MODE_HOST))) ?? ''; }
       catch { executable = ''; }
+    } else if (!isAbsolute(executable)) {
+      executable = findCodexOnPath(process.env.PATH, present) ?? '';
     }
   }
-  const codeModeHostExecutable = config.codeModeHostExecutable ?? join(dirname(executable || '.'), 'codex-code-mode-host.exe');
+  const codeModeHostExecutable = config.codeModeHostExecutable ?? join(dirname(executable || '.'), CODE_MODE_HOST);
   if (!executable || !isAbsolute(executable) || !present(executable) || !isAbsolute(codeModeHostExecutable) || !present(codeModeHostExecutable)) throw new Error('A supported local Codex executable and adjacent code-mode host are required. Run dependency setup in the supported desktop host.');
   const source = resolve(sourceRoot);
   return { ...config, executable, codeModeHostExecutable,

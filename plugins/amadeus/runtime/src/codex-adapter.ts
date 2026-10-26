@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { spawn, spawnSync } from "node:child_process";
 import { verifyWorkspace } from "./worker-isolation.ts";
-import { terminateWorkerTree } from "./worker-process.ts";
+import { terminateWorkerTree, WORKER_PROCESS_GROUP } from "./worker-process.ts";
 import { isolationSecurityStateBinding } from "./isolation-security-state.ts";
 import { resolveMaximumIdleSeconds } from "./worker-timeouts.ts";
 import { developerToolEnvironment } from "./worker-environment.ts";
@@ -396,7 +396,7 @@ export async function runWorkerCommand(executable: string, args: string[], works
   onStdoutLine?: (line: string) => boolean | void): Promise<{ exitCode: number | null; signal: NodeJS.Signals | null; timedOut: boolean; timeoutKind?: "wall-clock" | "idle"; stdout: string; stderr: string; error?: string }> {
   const environment = isolatedWorkerEnvironment(environmentOverrides);
   return await new Promise((resolveResult) => {
-    const child = spawn(resolveWorkerExecutable(executable, environment), args, { cwd: resolve(workspace), env: environment, shell: false, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(resolveWorkerExecutable(executable, environment), args, { cwd: resolve(workspace), env: environment, shell: false, stdio: ["ignore", "pipe", "pipe"], detached: WORKER_PROCESS_GROUP });
     let stdout = "";
     let stderr = "";
     let timedOut = false;

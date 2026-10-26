@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { spawn, spawnSync } from "node:child_process";
 import { verifyWorkspace } from "./worker-isolation.ts";
-import { terminateWorkerTree } from "./worker-process.ts";
+import { terminateWorkerTree, WORKER_PROCESS_GROUP } from "./worker-process.ts";
 import { WORKER_RUNTIME_DIRECTORY, workerRuntimeLayout } from "./worker-runtime-layout.ts";
 import { isolationSecurityStateBinding } from "./isolation-security-state.ts";
 import { developerToolEnvironment } from "./worker-environment.ts";
@@ -476,7 +476,7 @@ function spawnCursor(
     const writablePaths = config.readOnlyOnly ? [] : normalizeSharedWritablePaths(config.writableWorkspacePaths, { label: "Cursor", required: true });
     const launch = buildCursorContainmentLaunch(config, workspace, args, writablePaths, configurationDirectory);
     const child = effectiveSpawn(launch.executable, launch.args, {
-      cwd: launch.cwd, env: buildCursorEnvironment(config, configurationDirectory, workspace), shell: false, stdio: ["ignore", "pipe", "pipe"],
+      cwd: launch.cwd, env: buildCursorEnvironment(config, configurationDirectory, workspace), shell: false, stdio: ["ignore", "pipe", "pipe"], detached: WORKER_PROCESS_GROUP,
     });
     let stdout = "";
     let stderr = "";

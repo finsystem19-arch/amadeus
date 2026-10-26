@@ -6,11 +6,12 @@ import type { WorkerContext, WorkerDriver, WorkerResult } from "./orchestrator.t
 import type { WorkRoute } from "./work-routing.ts";
 import { portableWorkerConfig } from './portable-runtime.ts';
 import { parseWindowsUiCommand, runWindowsUiPlan, type WindowsUiCommand } from "./windows-ui-automation.ts";
+import { npmCliPath } from "./verification-checks.mjs";
 
 export function testCommandArgs(command: WorkRoute["command"]): string[] {
   if (command === "node-test") return ["--test"];
   if (command?.startsWith("npm-")) {
-    const npm = join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
+    const npm = npmCliPath();
     if (!existsSync(npm)) throw new Error("npm CLI not found alongside Node; no test was launched");
     const script = command.slice("npm-".length);
     return script === "test" ? [npm, "test"] : [npm, "run", script];

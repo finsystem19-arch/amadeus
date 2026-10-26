@@ -4,7 +4,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 import { verifyWorkspace } from "./worker-isolation.ts";
-import { terminateWorkerTree } from "./worker-process.ts";
+import { terminateWorkerTree, WORKER_PROCESS_GROUP } from "./worker-process.ts";
 import { WORKER_RUNTIME_DIRECTORY, workerRuntimeLayout } from "./worker-runtime-layout.ts";
 import { isolationSecurityStateBinding } from "./isolation-security-state.ts";
 import { assertNoWorkspaceReparsePoints, containedLaunch, denyByDefaultFilesystemPolicy, developmentFilesystemPolicy, normalizeProjectScope as normalizeSharedProjectScope, normalizeWritableWorkspacePaths as normalizeSharedWritablePaths, workspacePermissionEntries, writableParentChain as sharedWritableParentChain } from "./worker-sandbox.ts";
@@ -500,6 +500,7 @@ function spawnClaude(
       env: buildClaudeEnvironment(config, configurationDirectory, workspace),
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],
+      detached: WORKER_PROCESS_GROUP,
     });
     let stdout = "";
     let stderr = "";

@@ -2,7 +2,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, realpathSync, writeFileSync, rmSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CODEX_PERMISSION_PROFILE, buildCodexInvocation, buildCodexSandboxCommand, codexIsolationEnvelope } from './codex-adapter.ts';
 
@@ -15,7 +15,7 @@ export function validateAcceptance(probes) {
 }
 
 export function runAcceptance({ config, workspace, receiptPath }, execute = execFileSync) {
-  if (process.platform !== 'win32' || !config.assignedProjectRoot) throw new Error('Packaged acceptance requires the supported Windows project-scoped Codex route.');
+  if (!config.assignedProjectRoot) throw new Error('Packaged acceptance requires the project-scoped Codex route.');
   const id = randomUUID();
   const sourceCanary = join(config.assignedProjectRoot, '.amadeus-acceptance-' + id);
   const evidenceCanary = join(dirname(receiptPath), '.amadeus-acceptance-' + id);
@@ -26,7 +26,7 @@ export function runAcceptance({ config, workspace, receiptPath }, execute = exec
     const inputs = { sourceCanary, evidenceCanary, workspaceMetadata: join(workspace, '.worker-isolation.json'), parent: dirname(config.assignedProjectRoot), protectedPaths: config.protectedPaths,
       // A folder whose children are each denied (AppData\Roaming) may still list names under MXC; verify the children.
       sensitivePaths: (config.deniedSensitivePaths ?? []).filter(p => !(config.deniedSensitivePaths ?? [])
-        .some(other => other.toLowerCase().startsWith(p.toLowerCase() + '\\'))) };
+        .some(other => other.toLowerCase().startsWith(p.toLowerCase() + sep))) };
     const code = `const fs=require('node:fs'); const x=JSON.parse(process.argv[1]);
       function file(path,flags){try{const h=fs.openSync(path,flags);fs.closeSync(h);return true;}catch(e){if(['EACCES','EPERM'].includes(e.code))return false;throw e;}}
       function directory(path){try{const h=fs.opendirSync(path);h.closeSync();return true;}catch(e){if(['EACCES','EPERM'].includes(e.code))return false;throw e;}}

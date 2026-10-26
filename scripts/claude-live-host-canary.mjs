@@ -13,13 +13,14 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { CLAUDE_MARKETPLACE_NAME, stageClaudeMarketplace } from './build-claude-package.mjs';
 import {
   preflightClaudeHost,
@@ -341,7 +342,7 @@ export function runClaudeLiveHostCanary(options = {}) {
   return { ...evidence, evidencePath };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const result = runClaudeLiveHostCanary();
   process.stdout.write(`${JSON.stringify({
     ok: result.ok,

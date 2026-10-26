@@ -1,7 +1,7 @@
 /** Origin-host Cursor adapter acceptance. Writes only sanitized evidence. */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { writeDevelopmentManifest } from "../src/development-project.ts";
 import { materializeWorkspace, materializeWritableWorkspacePaths } from "../src/worker-isolation.ts";
 import { prepareWorkspaceIsolationAcceptance } from "../src/workspace-isolation-acceptance.ts";
@@ -124,7 +124,7 @@ export async function runCursorOriginHostCanary(options) {
   };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const values = args(process.argv.slice(2));
   const result = await runCursorOriginHostCanary({
     projectRoot: required(values, "project-root"),

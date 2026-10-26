@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -47,7 +47,7 @@ export function writeApprovedSupportBundle(path, preview, approval = false) {
   return payload;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const files = process.argv.slice(2);
   const entries = files.map((path) => ({ name: basename(path), content: readFileSync(resolve(path), "utf8") }));
   process.stdout.write(`${JSON.stringify(previewSupportBundle({ userInitiated: true, entries }), null, 2)}\n`);

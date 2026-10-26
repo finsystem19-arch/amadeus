@@ -1,8 +1,8 @@
 /** Origin-host Claude adapter acceptance. Writes only sanitized evidence. */
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { writeDevelopmentManifest } from "../src/development-project.ts";
 import { materializeWorkspace, materializeWritableWorkspacePaths } from "../src/worker-isolation.ts";
 import { prepareWorkspaceIsolationAcceptance } from "../src/workspace-isolation-acceptance.ts";
@@ -164,7 +164,7 @@ export async function runClaudeOriginHostCanary(options) {
   };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const values = args(process.argv.slice(2));
   const result = await runClaudeOriginHostCanary({
     projectRoot: required(values, "project-root"),

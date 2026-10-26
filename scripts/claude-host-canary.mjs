@@ -3,9 +3,9 @@
  * copies credentials, enables API billing, or claims support from absence.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { preflightClaudeHost, claudeHostStatus } from './claude-host-lifecycle.mjs';
 
 function probeClaudeAuthStatus(executable, environment, run = spawnSync) {
@@ -72,7 +72,7 @@ export function runClaudeHostCanary(options = {}) {
   return { ...evidence, evidencePath, fixturePresent: existsSync(join(repository, 'host-fixtures', 'claude-code', 'parity.json')) };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const result = runClaudeHostCanary();
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   process.exitCode = 0;

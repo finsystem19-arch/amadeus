@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { onboardingInstructions } from "./privacy-onboarding.mjs";
 import { dirname, resolve } from "node:path";
 import { activeRuns, runBackground } from "./background-run.mjs";
@@ -56,7 +57,7 @@ if (process.argv.includes("--background-request")) {
     });
 } else if (process.argv.includes("--self-test")) {
   await selfTest();
-} else if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+} else if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   let buffer = "";
   process.stdin.setEncoding("utf8");
   process.stdin.on("data", (chunk) => {

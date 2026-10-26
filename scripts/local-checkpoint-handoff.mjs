@@ -10,6 +10,7 @@ import {
   openSync,
   closeSync,
   readFileSync,
+  realpathSync,
   writeFileSync,
   unlinkSync,
   copyFileSync,
@@ -17,7 +18,7 @@ import {
 import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { excludedDevelopmentPath } from '../src/excluded-development-path.mjs';
 
 function hashFile(path) {
@@ -137,7 +138,7 @@ export function prepareLocalCheckpointHandoff(options = {}) {
   };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const args = Object.fromEntries(process.argv.slice(2).flatMap((value, index, all) => {
     if (!value.startsWith('--')) return [];
     const key = value.slice(2);

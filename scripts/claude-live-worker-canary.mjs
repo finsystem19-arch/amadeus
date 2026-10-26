@@ -1,7 +1,7 @@
 /** Explicit, origin-host Claude subscription worker canary. Never runs on import. */
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, realpathSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { parseClaudeResult, runClaudeImplementation } from '../src/claude-adapter.ts';
 
 export const CANARY_RESULT = 'AMADEUS_CLAUDE_AUTH_OK';
@@ -100,7 +100,7 @@ export async function runClaudeLiveWorkerCanary({ configPath, workspace, evidenc
   return { ...evidence, evidencePath };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const [configPath, workspace, evidenceDir] = process.argv.slice(2);
   const evidence = await runClaudeLiveWorkerCanary({ configPath, workspace, evidenceDir });
   process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`);

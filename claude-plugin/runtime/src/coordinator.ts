@@ -1,8 +1,8 @@
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, realpathSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { DEFAULT_USAGE_LIMIT_WAIT_MS, detectUsageLimit, type UsageLimit } from "./provider-limits.ts";
 import { estimateCreditMicros, lunaRateCard, validateUsage, type CodexUsage } from "./usage-accounting.ts";
 import { formatGoalIterationObjective, withRecordedOwnerAuthorization, type GoalDecision } from "./goal-protocol.ts";
@@ -1552,7 +1552,7 @@ export class Coordinator {
   }
 }
 
-// pathToFileURL matches import.meta.url on every platform, including paths with spaces.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Compare real paths so a symlinked install location (macOS /var, /tmp) still starts.
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   void import("./coordinator-cli.ts").then(({ main }) => main());
 }

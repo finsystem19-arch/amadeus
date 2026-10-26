@@ -1,9 +1,9 @@
 // Non-model acceptance for the packaged Codex route. Never runs during onboarding.
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, realpathSync, writeFileSync, rmSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { dirname, join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { CODEX_PERMISSION_PROFILE, buildCodexInvocation, buildCodexSandboxCommand, codexIsolationEnvelope } from './codex-adapter.ts';
 
 export function validateAcceptance(probes) {
@@ -49,7 +49,7 @@ export function runAcceptance({ config, workspace, receiptPath }, execute = exec
     rmSync(sourceCanary, { force: true }); rmSync(evidenceCanary, { force: true });
   }
 }
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const arg = name => process.argv[process.argv.indexOf(name) + 1];
   if (arg('-Adapter') !== 'codex') throw new Error('Cursor requires its separately configured containment acceptance.');
   console.log(JSON.stringify(runAcceptance({ config: JSON.parse(readFileSync(arg('-ConfigPath'), 'utf8')), workspace: arg('-Workspace'), receiptPath: arg('-ReceiptPath') })));

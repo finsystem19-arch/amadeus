@@ -14,7 +14,7 @@ import {
 } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const normalized = bytes => bytes.toString('utf8').replaceAll('\r\n', '\n');
@@ -224,7 +224,7 @@ export function publishClaudeMarketplace(repository, options = {}) {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const mode = process.argv[2];
   if (mode === '--marketplace') {
     if (process.argv.length !== 4) throw new Error('Usage: node scripts/build-claude-package.mjs --marketplace <new-marketplace-directory>');

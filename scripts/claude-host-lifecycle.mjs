@@ -17,13 +17,14 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   writeFileSync,
   lstatSync,
 } from 'node:fs';
 import { basename as pathBasename, dirname, extname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import {
   CLAUDE_MARKETPLACE_NAME,
@@ -618,7 +619,7 @@ export function claudeHostStatus(options = {}) {
   };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const [command, ...rest] = process.argv.slice(2);
   const args = Object.fromEntries(rest.flatMap((value, index, all) => {
     if (!value.startsWith('--')) return [];

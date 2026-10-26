@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 /** Model that older goal packages recorded as their implicit default; kept only to read them. */
@@ -19,7 +20,7 @@ const slugPattern = /^[a-z0-9][a-z0-9._-]{1,80}$/;
 const efforts = new Set(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
 
 /** Use the signed-in Codex client's ranked model list; this never calls a model. */
-export function readModelCatalog(home = process.env.CODEX_HOME ?? join(process.env.USERPROFILE ?? "", ".codex")): ModelCatalog {
+export function readModelCatalog(home = process.env.CODEX_HOME ?? join(process.env.USERPROFILE ?? homedir(), ".codex")): ModelCatalog {
   const source = JSON.parse(readFileSync(join(home, "models_cache.json"), "utf8"));
   if (!Array.isArray(source.models) || typeof source.fetched_at !== "string") {
     throw new Error("Codex model catalog is incomplete");

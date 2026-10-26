@@ -1,5 +1,5 @@
 {
-  "package.json": "82961c05c6e3dc6071b068421685c81a2b8b9e9d1b9ce2bf29059861743dc8db",
+  "package.json": "6638d0ec496f38b7a4a4f728d14823952dd212b38e24951aaed1a9e54d21eea5",
   "src/Read-IsolationSecurityState.ps1": "62c0fd7adfc76eda6894997f43a2f66b0c14eaf90e260e65e125cfc2ba9cbf15",
   "src/backup-policy.ts": "93f0b100de7cd2019dff9d84170490f537351cc3460bcf7f2c16503cba248a36",
   "src/claude-adapter.ts": "58426a753da5658dd7956e7a0b777343fa95718720bea868952961bc821839d4",
@@ -31,7 +31,7 @@
   "src/local-model.ts": "b2b4c1143882abce6b206db569768ae40520851a406118bddea84d72245be264",
   "src/milestone-git-authorization.ts": "5cb2e50bddb3cde82aa054d284682a503784c96b8cd611a1c130b930385f2025",
   "src/milestone-git.ts": "789306e83d37b0a818d90fa370882a396650ce9ba923be48bd7d0c0417bf6c42",
-  "src/model-catalog.ts": "887e60f23980640a32df5a3c7d7458380250942f157c8f5a9ce7fb5be9dda8c9",
+  "src/model-catalog.ts": "c7e4f10a5c0f94766fcdd5fb0842a03b82666de9bfd278df669f8dc9802bbceb",
   "src/orchestrator.ts": "0389a240e2c3a86a655610a0e13a1f6fa3a9bb9fed9b73fc21a40552a23cbb55",
   "src/portable-acceptance.mjs": "f1ba1a0ab5c3002057b4e81bd669ddc1ebc7060b1d17ae28e025aca5abd4c2fa",
   "src/portable-runtime.ts": "236cf698f6761aeceda61e2f8f132a359beb443272af89213c6fafda6b6c6834",
